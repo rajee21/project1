@@ -1,0 +1,793 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: PEGA_Environment
+
+Parameters:
+  EC2Subnet1:
+    Description: Specify First Subnet to use
+    Type: AWS::EC2::Subnet::Id
+    Default: Must choose a valid subnet
+  EC2Subnet2:
+    Description: Specify Second Subnet to use
+    Type: AWS::EC2::Subnet::Id
+    Default: Must choose a valid subnet
+  RDSUserName:
+    Description: Enter the master user name for the Database
+    Type: String
+  RDSDBName:
+    Description: Enter the initial database name
+    Type: String
+  RDSPassword:
+    Description: Enter a password for the master user
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+    ConstraintDescription: Must enter a password from 8-128 characters
+  RDSSecurityGroup:
+    Description: SSM Stored security group ID for EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Must be list of EC2 security group ids
+  WebInstanceCount:
+    Description: Number of EC2 instances (must be between 1 and 10).
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+    ConstraintDescription: Must be a number between 1 and 10.
+  WebInstanceType:
+    Description: Instance type to launch EC2 instances.
+    Type: String
+    Default: m4.2xlarge
+    AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  WebSecurityGroup:
+    Description: SSM Stored security group ID for EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Must be list of EC2 security group ids
+  BixInstanceCount:
+    Description: Number of EC2 instances (must be between 1 and 3).
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 3
+    ConstraintDescription: Must be a number between 1 and 3.
+  BixInstanceType:
+    Description: Instance type to launch EC2 instances.
+    Type: String
+    Default: m4.2xlarge
+    AllowedValues: 
+        - m4.2xlarge
+        - t2.medium
+  BixSecurityGroup:
+    Description: SSM Stored security group ID for EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Must be list of EC2 security group ids
+  UtilInstanceCount:
+    Description: Number of EC2 instances (must be between 1 and 3).
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 3
+    ConstraintDescription: Must be a number between 1 and 3.
+  UtilInstanceType:
+    Description: Instance type to launch EC2 instances.
+    Type: String
+    Default: m4.2xlarge
+    AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  UtilSecurityGroup:
+    Description: SSM Stored security group ID for EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Must be list of EC2 security group ids
+  Environment:
+    Type: String
+    Description: AWS Account for PEGA environment
+    AllowedValues:
+      - dev
+      - st
+      - rt
+      - prod
+      - hx
+  ApplicationSet:
+    Type: String
+    Description: Type of PEGA application Needed
+    MinLength: 2
+    MaxLength: 5
+    ConstraintDescription: Application must be between 2-5 characters long
+  Keypairname:
+    Description: Keypair name for all EC2 Instances created
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 Keypair
+  DatabaseType:
+    Type: String
+    Description: RDS Instance used for the Database
+    Default: db.m4.2xlarge
+    AllowedValues:
+      - db.t2.small
+      - db.m4.2xlarge
+  RDSMultiAZ:
+    Type: String
+    Description: Specify if you want multi AZ
+    AllowedValues:
+      - true
+      - false
+  Pegaver:
+    Type: String
+    Description: Version of PEGA to load (artifacts and playbook must exist!)
+    Default: none
+  S3BucketCreate:
+    Type: String
+    Description: Create a New S3 Bucket? (must have create policy)
+    Default: no
+    AllowedValues:
+      - no
+      - yes
+
+Mappings:
+  Environments:
+    dev:
+      EC2Env: diae1
+      EC2Ami: ami-0ed7371bfc832faf9
+      S3LogBucket: hf-dev-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    st:
+      EC2Env: siae1
+      EC2Ami: ami-086bfd769ba8d3939
+      S3LogBucket: hf-systest-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    rt:
+      EC2Env: riae1
+      EC2Ami: ami-0c1c3610a2bab4fe1
+      S3LogBucket: hf-reltest-s3logs
+      DBDiskSize: 4000
+      Group: ec2-user
+    prod:
+      EC2Env: piae1
+      EC2Ami: ami-0a51aab460febd8f0
+      S3LogBucket: hf-prod-s3logs
+      DBDiskSize: 12000
+      Group: ec2-user
+    hx:
+      EC2Env: hiae1
+      EC2Ami: ami-0cb1120d7fd6f555e
+      S3LogBucket: hf-preprod-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+
+Conditions: 
+  S3bc: !Equals [!Ref S3BucketCreate, yes]
+  Web_Launch1: !Equals [1, 1]
+  Web_Launch2: !Not [!Equals [1, !Ref WebInstanceCount]]
+  Web_Launch3: !And
+  - !Not [!Equals [1, !Ref WebInstanceCount]]
+  - !Not [!Equals [2, !Ref WebInstanceCount]]
+  Web_Launch4: !And
+  - !Not [!Equals [1, !Ref WebInstanceCount]]
+  - !Not [!Equals [2, !Ref WebInstanceCount]]
+  - !Not [!Equals [3, !Ref WebInstanceCount]]
+  Web_Launch5: !And
+  - !Not [!Equals [1, !Ref WebInstanceCount]]
+  - !Not [!Equals [2, !Ref WebInstanceCount]]
+  - !Not [!Equals [3, !Ref WebInstanceCount]]
+  - !Not [!Equals [4, !Ref WebInstanceCount]]
+  Web_Launch6: !Or
+  - !Equals [6, !Ref WebInstanceCount]
+  - !Equals [7, !Ref WebInstanceCount]
+  - !Equals [8, !Ref WebInstanceCount]
+  - !Equals [9, !Ref WebInstanceCount]
+  - !Equals [10, !Ref WebInstanceCount]
+  Web_Launch7: !Or
+  - !Equals [7, !Ref WebInstanceCount]
+  - !Equals [8, !Ref WebInstanceCount]
+  - !Equals [9, !Ref WebInstanceCount]
+  - !Equals [10, !Ref WebInstanceCount]
+  Web_Launch8: !Or
+  - !Equals [8, !Ref WebInstanceCount]
+  - !Equals [9, !Ref WebInstanceCount]
+  - !Equals [10, !Ref WebInstanceCount]
+  Web_Launch9: !Or
+  - !Equals [9, !Ref WebInstanceCount]
+  - !Equals [10, !Ref WebInstanceCount]
+  Web_Launch10: !Equals [10, !Ref WebInstanceCount]
+  Bix_Launch1: !Equals [1, 1]
+  Bix_Launch2: !Not [!Equals [1, !Ref BixInstanceCount]]
+  Bix_Launch3: !And
+  - !Not [!Equals [1, !Ref BixInstanceCount]]
+  - !Not [!Equals [2, !Ref BixInstanceCount]]
+  Util_Launch1: !Equals [1, 1]
+  Util_Launch2: !Not [!Equals [1, !Ref UtilInstanceCount]]
+  Util_Launch3: !And
+  - !Not [!Equals [1, !Ref UtilInstanceCount]]
+  - !Not [!Equals [2, !Ref UtilInstanceCount]]
+
+Resources:
+  s3Bucket:
+    Condition: S3bc
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Join [ "-", [ "hf-pega", !Ref Environment, !Ref ApplicationSet]]
+      LoggingConfiguration:
+        DestinationBucketName: hf-dev-s3logs
+        LogFilePrefix: !Join [ "", [ "hf-pega-", !Ref Environment, "-", !Ref ApplicationSet, "/"]]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ "hf-pega", !Ref Environment, !Ref ApplicationSet]]
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !FindInMap [Environments, !Ref Environment, DBDiskSize]
+      DBInstanceClass: !Ref DatabaseType
+      DBInstanceIdentifier: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pg", !Ref ApplicationSet, "db"]]
+              - "01"
+      DBName: !Ref RDSDBName
+      DBSubnetGroupName: trusted-private
+      Engine: postgres
+      EngineVersion: "11.4"
+      MasterUsername: !Ref RDSUserName
+      MasterUserPassword: !Ref RDSPassword
+      MultiAZ: !Ref RDSMultiAZ
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      StorageType: gp2
+      VPCSecurityGroups: !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet, "db"]]
+              - "01"
+  WebInstance1:
+    Condition: Web_Launch1
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "01"
+  WebInstance2:
+    Condition: Web_Launch2
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]    
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "02"
+  WebInstance3:
+    Condition: Web_Launch3
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]    
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "03"
+  WebInstance4:
+    Condition: Web_Launch4
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "04"
+  WebInstance5:
+    Condition: Web_Launch5
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "05"
+  WebInstance6:
+    Condition: Web_Launch6
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "06"
+  WebInstance7:
+    Condition: Web_Launch7
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "07"
+  WebInstance8:
+    Condition: Web_Launch8
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "08"
+  WebInstance9:
+    Condition: Web_Launch9
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "09"
+  WebInstance10:
+    Condition: Web_Launch10
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref WebInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref WebSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet]]
+              - "10"
+  BixInstance1:
+    Condition: Bix_Launch1
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref BixInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref BixSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgb", !Ref ApplicationSet]]
+              - "01"
+  BixInstance2:
+    Condition: Bix_Launch2
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref BixInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref BixSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgb", !Ref ApplicationSet]]
+              - "02"
+  BixInstance3:
+    Condition: Bix_Launch3
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref BixInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref BixSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgb", !Ref ApplicationSet]]
+              - "03"
+  UtilInstance1:
+    Condition: Util_Launch1
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref UtilInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref UtilSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgu", !Ref ApplicationSet]]
+              - "01"
+  UtilInstance2:
+    Condition: Util_Launch2
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref UtilInstanceType
+      SubnetId: !Ref EC2Subnet2
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref UtilSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgu", !Ref ApplicationSet]]
+              - "02"
+  UtilInstance3:
+    Condition: Util_Launch3
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+      InstanceType: !Ref UtilInstanceType
+      SubnetId: !Ref EC2Subnet1
+      IamInstanceProfile: HF-EC2-SSMRole
+      DisableApiTermination: true
+      Monitoring: false
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -ex
+            wget ${Arturl}/pega.yml
+            ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+          - Group: !FindInMap [Environments, !Ref Environment, Group]
+            Arturl: !Join
+              - ""
+              - - "https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/"
+                - !Ref Pegaver
+                - "/"
+      SecurityGroupIds: !Ref UtilSecurityGroup
+      KeyName: !Ref Keypairname
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgu", !Ref ApplicationSet]]
+              - "03"
+
+Outputs:
+  WebNodeReport:
+    Value: !Join
+      - ""
+      - - !Ref WebInstanceCount
+        - " of web nodes of type "
+        - !Ref WebInstanceType
+        - " running "
+        - !Ref ApplicationSet
+        - " application set in environment "
+        - !Ref Environment
+  BixNodeReport:
+    Value: !Join
+      - ""
+      - - !Ref BixInstanceCount
+        - " of web nodes of type "
+        - !Ref BixInstanceType
+        - " running "
+        - !Ref ApplicationSet
+        - " application set in environment "
+        - !Ref Environment
+  UtilNodeReport:
+    Value: !Join
+      - ""
+      - - !Ref UtilInstanceCount
+        - " of web nodes of type "
+        - !Ref UtilInstanceType
+        - " running "
+        - !Ref ApplicationSet
+        - " application set in environment "
+        - !Ref Environment
+  DBNodeReport:
+    Value: !Join
+      - ""
+      - - "1 RDS PostgresSQL instance/cluster 11.4 running with Multi-AZ "
+        - !Ref RDSMultiAZ
+        - " with type "
+        - !Ref DatabaseType
+        - " and "
+        - !FindInMap [Environments, !Ref Environment, DBDiskSize]
+        - " GB disk."
