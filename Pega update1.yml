@@ -1,0 +1,752 @@
+---
+# Create resources for PEGA . This includes ALB, EC2
+# instances, launch template, autoscaling groups etc. 
+#
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create resources for PEGA components'
+
+# Parameters
+# ------------
+# Input parameters for this template
+#
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Global Settings
+        Parameters:
+          - Environment
+          - ApplicationSet
+          - VpcId
+          - Artifactory
+          - Pegaver
+      - Label:
+          default: ELB Settings
+        Parameters:
+          - PublicSubnets
+          - ALBSecurityGroup
+#          - ELBLoggingKey
+          - AvailabilityZone1
+          - AvailabilityZone2 
+      - Label:
+          default: Subnets
+          Parameters:
+            - PrivateSubnet
+            - DBSubnet
+      - Label:
+          default: Web Instance Settings
+        Parameters:
+          - WebInstanceType
+          - WebSecurityGroup
+          - WebKeyPair
+          - WebYaml 
+      - Label:
+          default: Bix Instance Settings
+        Parameters:
+          - BixInstanceType
+          - BixSecurityGroup
+          - BixKeyPair
+          - BixYaml
+      - Label:
+          default: Util Instance Settings
+        Parameters:
+          - UtilInstanceType
+          - UtilSecurityGroup
+          - UtilKeyPair
+          - UtilYaml
+      - Label:
+          default: DB Instance Settings
+        Parameters:
+          - DatabaseType
+          - DBPrivateSubnet
+          - RDSMultiAZ
+          - RDSUserName
+          - RDSDBName
+          - RDSPassword
+          - RDSSecurityGroup
+      - Label:
+          default: Certificates
+        Parameters:
+          - DevALBListernerCertARN
+          - ProdALBListernerCertARN   
+# Parameter Labels           
+    ParameterLabels:
+      Environment: 
+        default: Environment
+      ApplicationSet:  
+        default: ApplicationSet
+      VpcId:
+        default: VpcId
+      Artifactory:
+        default: Artifactory URL
+      Pegaver:
+        default: Pega version
+      PublicSubnets:
+        default: PublicSubnets (Choose 2 subnets for ELB)
+#      ELBLoggingBucket:
+#       default: ELB Logging Bucket
+#      ELBLoggingKey:
+#       default: ELB Logging Key
+      LogSNS:
+        default: Logging SNS ARN
+      AvailabilityZone1:
+        default: AvailabilityZone1
+      AvailabilityZone2:
+        default: AvailabilityZone2
+      WebInstanceType:
+        default: WEB Instance Type
+      WebSecurityGroup:
+        default: WEB Security Group
+      WebKeyPair:
+        default: WEB KeyPair
+      WebYaml:
+        default: YAML file for WEB node
+      BixInstanceType:
+        default: BIX Instance Type
+      BixSecurityGroup:
+        default: BIX Security Group
+      BixKeyPair:
+        default: BIX KeyPair
+      BixYaml:
+        default: YAML file for BIX node
+      UtilInstanceType:
+        default: UTIL Instance Type
+      UtilSecurityGroup:
+        default: UTIL Security Group
+      UtilKeyPair:
+        default: UTIL KeyPair
+      UtilYaml:
+        default: YAML file for UTIL node
+      PrivateSubnet:
+        default: Private subnets for Web/Bix/Util instance (Choose 2 subnets)
+      DBSubnet:
+        default: Private subnets for DB instance (Choose 2 subnets)
+ 
+# Parameter descriptions and default values        
+Parameters:
+  Environment:
+    Description: AWS Account for PEGA environment
+    Type: String
+    AllowedValues:
+      - dev
+      - st
+      - rt
+      - prod
+      - hx
+    Default: 'dev'
+  ApplicationSet: 
+    Description: Type of PEGA application Needed
+    Type: String
+    MinLength: 2
+    MaxLength: 5
+    ConstraintDescription: Application must be between 2-5 characters long
+  VpcId:
+    Description: VPC used for this application.
+    Type: 'AWS::EC2::VPC::Id'
+  Artifactory:
+    Description: Enter the arifactory URL
+    Type: String
+  Pegaver:
+    Description: Version of PEGA to load (artifacts and playbook must exist!)
+    Type: String
+  PublicSubnets:
+    Description: >-
+      The subnet IDs to use for the load balancer. The subnets must match the
+      Availability Zone values below.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  ALBSecurityGroup:
+    Description: SecurityGroup for ALB
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  AvailabilityZone1:
+    Description: Availability Zone for first Auto Scaling Group
+    Type: 'AWS::EC2::AvailabilityZone::Name'
+    Default: us-east-1a
+  AvailabilityZone2:
+    Description: Availability Zone for first Auto Scaling Group
+    Type: 'AWS::EC2::AvailabilityZone::Name'
+    Default: us-east-1b
+  WebInstanceType:
+     Description: Instance type to launch EC2 instances.
+     Type: String
+     Default: m4.2xlarge
+     AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  WebSecurityGroup:
+    Description: SSM Stored security group ID for Web EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  WebKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair
+  WebYaml:
+    Description: Enter the Yaml filename for Webinstance
+    Type: String
+  BixInstanceType:
+     Description: Instance type to launch Bix EC2 instances.
+     Type: String
+     Default: m4.2xlarge
+     AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  BixSecurityGroup:
+    Description: SSM Stored security group ID for Bix EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  BixKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Bix instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair
+  BixYaml:
+    Description: Enter the Yaml filename for Bix instance
+    Type: String
+  UtilInstanceType:
+    Description: Instance type to launch Util EC2 instances.
+    Type: String
+    Default: m4.2xlarge
+    AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  UtilSecurityGroup:
+    Description: SSM Stored security group ID for Util EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  UtilKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  UtilYaml:
+    Description: Enter the Yaml filename for Webinstance
+    Type: String
+  DatabaseType:
+    Type: String
+    Description: RDS Instance used for the Database
+    Default: db.m4.2xlarge
+    AllowedValues:
+      - db.t2.small
+      - db.m4.2xlarge
+  DBPrivateSubnet:
+    Description: The subnet IDs to use for the Databaser. The subnets must match the Availability Zone values below.
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Default: Must choose a valid subnet
+  RDSMultiAZ:
+    Type: String
+    Description: Specify if you want multi AZ
+    AllowedValues:
+      - true
+      - false
+  RDSUserName:
+    Description: Enter the master user name for the Database
+    Type: String
+  RDSDBName:
+    Description: Enter the initial database name
+    Type: String
+  RDSPassword:
+    Description: Enter a password for the master user
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 128
+    ConstraintDescription: Must enter a password from 8-128 characters
+  RDSSecurityGroup:
+    Description: SSM Stored security group ID for DB.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    ConstraintDescription: Must be list of EC2 security group ids
+  DevALBListernerCertARN:
+    Description: ''
+    Type: String
+    Default: arn:aws:acm:us-east-1:063588062663:certificate/f6178073-4c09-4345-9971-6ef47ca97de5
+  ProdALBListernerCertARN:
+    Description: ''
+    Type: String
+    Default: arn:aws:acm:us-east-1:773464579885:certificate/a80354a6-6bd5-4688-92c7-39389eb76ee0
+  S3BucketCreate:
+    Type: String
+    Description: Create a New S3 Bucket? (must have create policy)
+    Default: no
+    AllowedValues:
+      - no
+      - yes
+Conditions: 
+  S3bc: !Equals [!Ref S3BucketCreate, yes]
+ 
+# Mappings
+# ----------
+Mappings:
+  Environments:
+    dev:
+      EC2Env: diae1
+      EC2Ami: ami-0ed7371bfc832faf9
+      S3LogBucket: hf-dev-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    st:
+      EC2Env: siae1
+      EC2Ami: ami-086bfd769ba8d3939
+      S3LogBucket: hf-systest-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    rt:
+      EC2Env: riae1
+      EC2Ami: ami-0c1c3610a2bab4fe1
+      S3LogBucket: hf-reltest-s3logs
+      DBDiskSize: 4000
+      Group: ec2-user
+    prod:
+      EC2Env: piae1
+      EC2Ami: ami-0a51aab460febd8f0
+      S3LogBucket: hf-prod-s3logs
+      DBDiskSize: 12000
+      Group: ec2-user
+    hx:
+      EC2Env: hiae1
+      EC2Ami: ami-0cb1120d7fd6f555e
+      S3LogBucket: hf-preprod-s3logs
+      DBDiskSize: 500
+
+Resources:
+  s3bucket:
+    Condition: S3bc
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Join [ "-", [ "hf-pega", !Ref Environment, !Ref ApplicationSet]]
+      LoggingConfiguration:
+        DestinationBucketName: hf-dev-s3logs
+        LogFilePrefix: !Join [ "", [ "hf-pega-", !Ref Environment, "-", !Ref ApplicationSet, "/"]]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ "hf-pega", !Ref Environment, !Ref ApplicationSet]]
+  albWEB:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: albWEB
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 300
+        - Key: routing.http2.enabled
+          Value: true
+        - Key: deletion_protection.enabled
+          Value: true
+        - Key: access_logs.s3.enabled 
+          Value: false
+      Subnets:
+        - !Select 
+          - '0'
+          - !Ref PublicSubnet
+        - !Select 
+          - '1'
+          - !Ref PublicSubnet 
+      SecurityGroups:
+        - !Ref "ALBSecurityGroup"
+  albLstnrHTTPPEGA:
+     Type: 'AWS::ElasticLoadBalancingV2::Listener'
+     Properties:
+#      Certificates: 
+#        - CertificateArn: !Ref albSSLCertIDEM
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref albPegaWEBTarGrp
+      LoadBalancerArn: !Ref albWEB
+      Port: '80'
+      Protocol: HTTP
+  albPegaWEBTarGrp:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /orders/index.html
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 4
+      Matcher:
+       HttpCode: '200'
+      Name: albPegaWEBTarGrp
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: 'lb_cookie'
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '600'
+      UnhealthyThresholdCount: 3
+      VpcId: !Ref VpcId
+  asgPEGAWEB:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties: 
+      AutoScalingGroupName: asgPEGAWEB
+      AvailabilityZones:
+        - us-east-1a
+        - us-east-1b
+      Cooldown: '300'
+      DesiredCapacity: 2
+      Maxcount: 10
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref ltPEGAWEB
+        Version: !GetAtt ltPEGAWEB.LatestVersionNumber
+      MaxSize: 10
+      MinSize: '0'  
+      VPCZoneIdentifier:
+        - !Select 
+          - '0'
+          - !Ref PrivateSubnet
+        - !Select 
+          - '1'
+          - !Ref PrivateSubnet
+      TargetGroupARNs:
+        - !Ref albPegaWEBTarGrp
+      TerminationPolicies:
+        - Default
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '2'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  ltPEGAWEB:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltIPEGAWEB
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref WebInstanceType
+        KeyName: !Ref WebKeyPair
+        EbsOptimized: 'False'
+        DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              Fn::Base64: !Sub
+                - |
+                  #!/bin/bash -ex
+                  wget ${Arturl}/${yaml}
+                  ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+                - Group: !FindInMap [Environments, !Ref Environment, Group]
+                  Arturl: !Join
+                    - ""
+                    - - !Ref Artifactory
+                    - !Ref Pegaver
+                    - "/" 
+                  yaml: !Ref WebYaml                               
+        SecurityGroupIds:
+          - !Ref WebSecurityGroup
+  asgPEGAWEBScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGAWEB
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+  asgPEGAWEBScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGAWEB
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1 
+  WEBCPUAlarmHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up if CPU is greater than 70% for 10 minutes
+      AlarmName: WEB CPUAlarmHigh
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '90'
+      AlarmActions:
+        - !Ref asgPEGAWEBScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGAWEB
+      ComparisonOperator: GreaterThanThreshold
+  WEBCPUAlarmLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down if CPU is less than 50% for 10 minutes
+      AlarmName: WEB CPUAlarmLow
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref asgPEGAWEBScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGAWEB
+      ComparisonOperator: LessThanThreshold
+  PEGASubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: test@example.com
+      Protocol: email
+      TopicArn: !Ref 'PEGASNSTopic'
+  PEGASNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      TopicName: PEGASNSTopic
+  asgPEGABIX:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties: 
+      AutoScalingGroupName: asgPEGABIX
+      AvailabilityZones:
+        - us-east-1a
+        - us-east-1b
+      Cooldown: '300'
+      DesiredCapacity: 2
+      Maxcount: 10
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref ltPEGABIX
+        Version: !GetAtt ltPEGABIX.LatestVersionNumber
+      MaxSize: 10
+      MinSize: '0'  
+      VPCZoneIdentifier:
+        - !Select 
+          - '0'
+          - !Ref PrivateSubnet
+        - !Select 
+          - '1'
+          - !Ref PrivateSubnet
+      TerminationPolicies:
+        - Default
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '2'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  ltPEGABIX:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltIPEGABIX
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref BixInstanceType
+        KeyName: !Ref BixKeyPair
+        EbsOptimized: 'False'
+        DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              Fn::Base64: !Sub
+                - |
+                  #!/bin/bash -ex
+                  wget ${Arturl}/${yaml}
+                  ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+                - Group: !FindInMap [Environments, !Ref Environment, Group]
+                  Arturl: !Join
+                    - ""
+                    - - !Ref Artifactory
+                    - !Ref Pegaver
+                    - "/" 
+                  yaml: !Ref BixYaml                                    
+        SecurityGroupIds:
+          - !Ref ALBSecurityGroup
+  asgPEGABIXScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGABIX
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+  asgPEGABIXScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGABIX
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1 
+  BIXCPUAlarmHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up if CPU is greater than 70% for 10 minutes
+      AlarmName: BIX CPUAlarmHigh
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '90'
+      AlarmActions:
+        - !Ref asgPEGABIXScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGABIX
+      ComparisonOperator: GreaterThanThreshold
+  BIXCPUAlarmLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down if CPU is less than 50% for 10 minutes
+      AlarmName: BIX CPUAlarmLow
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref asgPEGABIXScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGABIX
+      ComparisonOperator: LessThanThreshold
+  asgPEGAUTIL:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties: 
+      AutoScalingGroupName: asgPEGAUTIL
+      AvailabilityZones:
+        - us-east-1a
+        - us-east-1b
+      Cooldown: '300'
+      DesiredCapacity: 2
+      Maxcount: 10
+      HealthCheckGracePeriod: '300'
+      HealthCheckType: EC2
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref ltPEGAUTIL
+        Version: !GetAtt ltPEGAUTIL.LatestVersionNumber
+      MaxSize: 10
+      MinSize: '0'  
+      VPCZoneIdentifier:
+        - !Select 
+          - '0'
+          - !Ref PrivateSubnet
+        - !Select 
+          - '1'
+          - !Ref PrivateSubnet
+      TerminationPolicies:
+        - Default
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: '1'
+        MaxBatchSize: '2'
+        WaitOnResourceSignals: 'true'
+        PauseTime: PT10M
+  ltPEGAUTIL:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltIPEGAUTIL
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref UtilInstanceType
+        KeyName: !Ref UTILKeyPair
+        EbsOptimized: 'False'
+        DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              Fn::Base64: !Sub
+                - |
+                  #!/bin/bash -ex
+                  wget ${Arturl}/${yaml}
+                  ansible-playbook pega.yml --extra-vars "prweburl=${Arturl} groupuser=${Group}"
+                - Group: !FindInMap [Environments, !Ref Environment, Group]
+                  Arturl: !Join
+                    - ""
+                    - - !Ref Artifactory
+                    - !Ref Pegaver
+                    - "/" 
+                  yaml: !Ref UtilYaml                                       
+        SecurityGroupIds:
+          - !Ref UtilSecurityGroup
+  asgPEGAUTILScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGAUTIL
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: 1
+  asgPEGAUTILScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref asgPEGAUTIL
+      Cooldown: 300
+      PolicyType: SimpleScaling
+      ScalingAdjustment: -1 
+  UTILCPUAlarmHigh:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-up if CPU is greater than 70% for 10 minutes
+      AlarmName: UTIL CPUAlarmHigh
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '90'
+      AlarmActions:
+        - !Ref asgPEGAUTILScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGAUTIL
+      ComparisonOperator: GreaterThanThreshold
+  UTILCPUAlarmLow:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmDescription: Scale-down if CPU is less than 50% for 10 minutes
+      AlarmName: UTIL CPUAlarmLow
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '70'
+      AlarmActions:
+        - !Ref asgPEGABUTILScaleDownPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref asgPEGAUTIL
+      ComparisonOperator: LessThanThreshold
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !FindInMap [Environments, !Ref Environment, DBDiskSize]
+      DBInstanceClass: !Ref DatabaseType
+      DBInstanceIdentifier: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pg", !Ref ApplicationSet, "db"]]
+              - "01"
+      DBName: !Ref RDSDBName
+      DBSubnetGroupName: trusted-private
+      Engine: postgres
+      EngineVersion: "11.4"
+      MasterUsername: !Ref RDSUserName
+      MasterUserPassword: !Ref RDSPassword
+      MultiAZ: !Ref RDSMultiAZ
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      StorageType: gp2
+      VPCSecurityGroups: !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !FindInMap [Environments, !Ref Environment, EC2Env]
+              - !Join [ "", ["pgw", !Ref ApplicationSet, "db"]]
+              - "01"
+   
+ 
