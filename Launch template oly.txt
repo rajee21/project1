@@ -1,0 +1,332 @@
+# Create resources for PEGA Infrastructure. This includes Launch template for WEB/BIX/UTIL node.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create resources for PEGA components'
+
+# Parameters
+# ------------
+# Input parameters for this template
+#
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Global Settings
+        Parameters:
+          - Environment
+          - ApplicationSet
+      - Label:
+          default: Web Instance Settings
+        Parameters:
+          - WebInstanceType
+          - WebSecurityGroup
+          - WebKeyPair
+          - WebYaml
+          - custYamlWeb
+      - Label:
+          default: Bix Instance Settings
+        Parameters:
+          - BixInstanceType
+          - BixSecurityGroup
+          - BixKeyPair
+          - BixYaml
+          - custYamlBix
+      - Label:
+          default: Util Instance Settings
+        Parameters:
+          - UtilInstanceType
+          - UtilSecurityGroup
+          - UtilKeyPair
+          - UtilYaml
+          - custYamlUtil
+  ParameterLabels:
+      Environment: 
+        default: Environment
+      WebInstanceType:
+        default: WEB Instance Type
+      WebSecurityGroup:
+        default: WEB Security Group
+      WebKeyPair:
+        default: WEB KeyPair
+      WebYaml:
+        default: YAML file for WEB node
+      custYamlWeb:
+        default: YAML file for Tomcat customization      
+      BixInstanceType:
+        default: BIX Instance Type
+      BixSecurityGroup:
+        default: BIX Security Group
+      BixKeyPair:
+        default: BIX KeyPair
+      BixYaml:
+        default: YAML file for BIX node
+      custYamlBix:
+        default: YAML file for Tomcat customization
+      UtilInstanceType:
+        default: UTIL Instance Type
+      UtilSecurityGroup:
+        default: UTIL Security Group
+      UtilKeyPair:
+        default: UTIL KeyPair
+      UtilYaml:
+        default: YAML file for UTIL node
+      custYamlUtil:
+        default: YAML file for Tomcat customization
+Parameters:
+  Environment:
+    Description: AWS Account for PEGA environment
+    Type: String
+    AllowedValues:
+      - dev
+      - st
+      - rt
+      - prod
+      - hx
+    Default: 'dev'
+  WebInstanceType:
+     Description: Instance type to launch EC2 instances.
+     Type: String
+     Default: m4.2xlarge
+     AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  WebSecurityGroup:
+    Description: SSM Stored security group ID for Web EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  WebKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair
+  WebYaml:
+    Description: Enter the Yaml filename for Webinstance
+    Type: String
+    Default: https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/8.4.1/pega.yml
+  custYamlWeb:
+    Description: Enter the Yaml file path for Tomcat customization
+    Type: String
+  BixInstanceType:
+     Description: Instance type to launch Bix EC2 instances.
+     Type: String
+     Default: m4.2xlarge
+     AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  BixSecurityGroup:
+    Description: SSM Stored security group ID for Bix EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  BixKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Bix instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair
+  BixYaml:
+    Description: Enter the Yaml file path for Bix instance
+    Type: String
+    Default: https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/8.4.1/pega.yml
+  custYamlBix:
+    Description: Enter the Yaml file path for Tomcat customization
+    Type: String
+  UtilInstanceType:
+    Description: Instance type to launch Util EC2 instances.
+    Type: String
+    Default: m4.2xlarge
+    AllowedValues:
+        - m4.2xlarge
+        - t2.medium
+  UtilSecurityGroup:
+    Description: SSM Stored security group ID for Util EC2 instances.
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  UtilKeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the Web instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  UtilYaml:
+    Description: Enter the Yaml file path for UTIL instance
+    Type: String
+    Default: https://artifactory.healthfirst.org/artifactory/IAC-PLATFORM-PEGA-INFRA/v1.0/8.4.1/pega.yml
+  custYamlUtil:
+    Description: Enter the Yaml file path for Tomcat customization
+    Type: String
+Mappings:
+  Environments:
+    dev:
+      EC2Env: diae1
+      EC2Ami: ami-0ed7371bfc832faf9
+      S3LogBucket: hf-dev-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    st:
+      EC2Env: siae1
+      EC2Ami: ami-086bfd769ba8d3939
+      S3LogBucket: hf-systest-s3logs
+      DBDiskSize: 500
+      Group: ec2-user
+    rt:
+      EC2Env: riae1
+      EC2Ami: ami-0c1c3610a2bab4fe1
+      S3LogBucket: hf-reltest-s3logs
+      DBDiskSize: 4000
+      Group: ec2-user
+    prod:
+      EC2Env: piae1
+      EC2Ami: ami-0a51aab460febd8f0
+      S3LogBucket: hf-prod-s3logs
+      DBDiskSize: 12000
+      Group: ec2-user
+    hx:
+      EC2Env: hiae1
+      EC2Ami: ami-0cb1120d7fd6f555e
+      S3LogBucket: hf-preprod-s3logs
+      DBDiskSize: 500
+Resources:
+  ltPEGAWEB:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltPEGAWEB
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref WebInstanceType
+        KeyName: !Ref WebKeyPair
+        # EbsOptimized: 'False'
+        # DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              "Fn::Base64": 
+                 "Fn::Sub": 
+                    - |
+                      #!/bin/bash -ex
+                      cd /tmp
+                      wget ${arti1}
+                      wget ${arti2}
+                      ansible-playbook pega.yml > pega.log
+                      ansible-playbook tomcat.yml > tomcat.log
+                    - {
+                      arti1: !Ref WebYaml,
+                      arti2: !Ref custYamlWeb
+                      }                              
+        SecurityGroupIds:
+          - !Ref WebSecurityGroup
+        Tags:
+        - Key: Business Owner
+          Value: PEGA Admins
+        - Key: Cost Center
+          Value: 105
+        - Key: Data Protection   
+          Value: None
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Finance Owner
+          Value: PEGA Admins
+        - Key: Name
+          Value: ltPEGAWEB
+        - Key: Program Group
+          Value: PEGA
+        - Key: Service Group
+          Value: PEGA
+        - Key: Service Role
+          Value: PEGA84 Master Stack
+        - Key: Technical Owner
+          Value: PEGA84 Master Stack
+        - Key: Version
+          Value: 1.0.0
+  ltPEGABIX:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltPEGABIX
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref WebInstanceType
+        KeyName: !Ref BixKeyPair
+        # EbsOptimized: 'False'
+        # DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              "Fn::Base64": 
+                 "Fn::Sub": 
+                    - |
+                      #!/bin/bash -ex
+                      cd /tmp
+                      wget ${arti1}
+                      wget ${arti2}
+                      ansible-playbook pega.yml > pega.log
+                      ansible-playbook tomcat.yml > tomcat.log
+                    - {
+                      arti1: !Ref BixYaml,
+                      arti2: !Ref custYamlBix
+                      }                              
+        SecurityGroupIds:
+          - !Ref BixSecurityGroup
+        Tags:
+        - Key: Business Owner
+          Value: PEGA Admins
+        - Key: Cost Center
+          Value: 105
+        - Key: Data Protection   
+          Value: None
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Finance Owner
+          Value: PEGA Admins
+        - Key: Name
+          Value: ltPEGABIX
+        - Key: Program Group
+          Value: PEGA
+        - Key: Service Group
+          Value: PEGA
+        - Key: Service Role
+          Value: PEGA84 Master Stack
+        - Key: Technical Owner
+          Value: PEGA84 Master Stack
+        - Key: Version
+          Value: 1.0.0
+  ltPEGAUTIL:
+    Type: 'AWS::EC2::LaunchTemplate'
+    Properties:
+      LaunchTemplateName: ltPEGAUTIL
+      LaunchTemplateData:
+        ImageId: !FindInMap [Environments, !Ref Environment, EC2Ami]
+        InstanceType: !Ref UtilInstanceType
+        KeyName: !Ref WebKeyPair
+        # EbsOptimized: 'False'
+        # DisableApiTermination: 'True'
+        Monitoring: 
+          Enabled: 'True'
+        UserData:  
+              "Fn::Base64": 
+                 "Fn::Sub": 
+                    - |
+                      #!/bin/bash -ex
+                      cd /tmp
+                      wget ${arti1}
+                      wget ${arti2}
+                      ansible-playbook pega.yml > pega.log
+                      ansible-playbook tomcat.yml > tomcat.log
+                    - {
+                      arti1: !Ref UtilYaml,
+                      arti2: !Ref custYamlUtil
+                      }                              
+        SecurityGroupIds:
+          - !Ref UtilSecurityGroup
+        Tags:
+        - Key: Business Owner
+          Value: PEGA Admins
+        - Key: Cost Center
+          Value: 105
+        - Key: Data Protection   
+          Value: None
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Finance Owner
+          Value: PEGA Admins
+        - Key: Name
+          Value: ltPEGAUTIL
+        - Key: Program Group
+          Value: PEGA
+        - Key: Service Group
+          Value: PEGA
+        - Key: Service Role
+          Value: PEGA84 Master Stack
+        - Key: Technical Owner
+          Value: PEGA84 Master Stack
+        - Key: Version
+          Value: 1.0.0
