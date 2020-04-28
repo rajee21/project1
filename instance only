@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: PEGA_Environment
+Parameters:
+  Artifactory:
+    Description: Enter the arifactory URL
+    Type: String
+  Pegaver:
+    Description: Version of PEGA to load (artifacts and playbook must exist!)
+    Type: String
+  BixYaml: 
+    Description: Version of PEGA to load (artifacts and playbook must exist!)
+    Type: String	
+Resources:
+  WebInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ed7371bfc832faf9
+      InstanceType: t2.micro
+      SubnetId: subnet-8a5963c1
+      SecurityGroupIds: 
+        - sg-0963b45e71ac1f152
+      DisableApiTermination: false
+      Monitoring: false
+      UserData:  
+              "Fn::Base64": 
+                 "Fn::Sub": 
+                    - |
+                      #!/bin/bash -ex
+                      cd /tmp
+                      wget ${arti}
+                      ansible-playbook pega.yml > ansible.log
+                    - {
+                      arti: !Ref Artifactory
+                      }
+      KeyName: PEGA84-Master
